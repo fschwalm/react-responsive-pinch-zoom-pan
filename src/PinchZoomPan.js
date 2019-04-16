@@ -4,6 +4,7 @@ import { createSelector } from 'reselect';
 import warning from 'warning';
 
 import ZoomButtons from './ZoomButtons'
+import RotateButtons from './RotateButtons'
 import DebugView from './StateDebugView';
 
 import { snapToTarget, negate, constrain, getPinchLength, getPinchMidpoint, getRelativePosition, setRef, isEqualDimensions, getDimensions, getContainerDimensions, isEqualTransform, getAutofitScale, getMinScale, tryCancelEvent, getImageOverflow } from './Utils';
@@ -18,15 +19,18 @@ const imageStyle = createSelector(
     state => state.top,
     state => state.left,
     state => state.scale,
-    (top, left, scale) => {
+    state => state.rotation,
+    (top, left, scale, rotation) => {
         const style = {
             cursor: 'pointer',
         };
-        return isInitialized(top, left, scale)
+        return isInitialized(top, left, scale, rotation)
             ? {
                 ...style,
-                transform: `translate3d(${left}px, ${top}px, 0) scale(${scale})`,
-                transformOrigin: '0 0',
+                transform: `translate3d(${left}px, ${top}px, 0) rotate(${rotation}deg) scale(${scale})`,
+                transformOrigin: rotation === 0 ? '0 0' : '',
+                position: rotation === 0 ? '' :  'relative',
+                top: rotation === 0 ? 0 : '-40%',
             } : style;
     }
 );
@@ -69,7 +73,9 @@ const browserPanActions = createSelector(
 //Ensure the image is not over-panned, and not over- or under-scaled.
 //These constraints must be checked when image changes, and when container is resized.
 export default class PinchZoomPan extends React.Component {
-    state = {};
+    state = {
+        rotation: 0,
+    };
 
     lastPointerUpTimeStamp; //enables detecting double-tap
     lastPanPointerPosition; //helps determine how far to pan the image
@@ -204,6 +210,34 @@ export default class PinchZoomPan extends React.Component {
     handleZoomOutClick = () => {
         this.cancelAnimation();
         this.zoomOut();
+    }
+
+    handleRotateLeftClick = () => {
+        this.setState(prevState => {
+            let newRotation = prevState.rotation - 90;
+            
+            if(newRotation >= 360){
+                newRotation =- 360;
+            }
+            
+            return {
+                rotation: newRotation,
+            };
+        })
+    }
+    
+    handleRotateRightClick = () => {
+        this.setState(prevState => {
+            let newRotation = prevState.rotation + 90;
+            
+            if(newRotation >= 360){
+                newRotation =- 360;
+            }
+            
+            return {
+                rotation: newRotation,
+            };
+        })
     }
 
     handleWindowResize = () => this.maybeHandleDimensionsChanged();
@@ -496,7 +530,7 @@ export default class PinchZoomPan extends React.Component {
     //lifecycle methods
     render() {
         const childElement = React.Children.only(this.props.children);
-        const { zoomButtons, maxScale, debug } = this.props;
+        const { zoomButtons, rotateButtons, maxScale, debug } = this.props;
         const { scale } = this.state;
 
         const touchAction = this.controlOverscrollViaCss
@@ -512,14 +546,19 @@ export default class PinchZoomPan extends React.Component {
 
         return (
             <div style={containerStyle}>
+                <React.Fragment>
                 {zoomButtons && this.isImageReady && this.isTransformInitialized && <ZoomButtons 
                     scale={scale} 
                     minScale={getMinScale(this.state, this.props)} 
                     maxScale={maxScale} 
                     onZoomOutClick={this.handleZoomOutClick} 
                     onZoomInClick={this.handleZoomInClick} 
-                />}
-                {debug && <DebugView {...this.state} overflow={imageOverflow(this.state)} />}
+                    />}
+                    {debug && <DebugView {...this.state} overflow={imageOverflow(this.state)} />}
+                {rotateButtons && this.isImageReady && this.isTransformInitialized && (
+                    <RotateButtons onRotateLeftClick={this.handleRotateLeftClick} onRotateRightClick={this.handleRotateRightClick} />
+                )}
+                </React.Fragment>
                 {React.cloneElement(childElement, {
                     onTouchStart: this.handleTouchStart,
                     onTouchEnd: this.handleTouchEnd,
@@ -610,6 +649,7 @@ PinchZoomPan.defaultProps = {
     maxScale: 1,
     position: 'topLeft',
     zoomButtons: true,
+    rotateButtons: true,
     doubleTapBehavior: 'reset'
 };
 
@@ -626,6 +666,7 @@ PinchZoomPan.propTypes = {
     maxScale: PropTypes.number,
     position: PropTypes.oneOf(['topLeft', 'center']),
     zoomButtons: PropTypes.bool,
+    rotateButtons: PropTypes.bool,
     doubleTapBehavior: PropTypes.oneOf(['reset', 'zoom']),
     initialTop: PropTypes.number,
     initialLeft: PropTypes.number,
